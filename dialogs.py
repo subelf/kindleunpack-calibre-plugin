@@ -31,6 +31,9 @@ class ProgressDialog(QProgressDialog):
         elif attr == 'isPrintReplica':
             self.kindle_type = 'PrintReplica'
             self.goal = 'PDF'
+        elif attr == 'isEpub':
+            self.kindle_type = 'EPUB'
+            self.goal = 'AZW3'
         self.gui = gui
         zero = 0
         self.setWindowTitle('{0} {1} {2} ({3} issues)...'.format(self.action_type, self.total_count, self.status_msg_type, zero))

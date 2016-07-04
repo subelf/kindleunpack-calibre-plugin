@@ -67,6 +67,15 @@ class InterfacePlugin(InterfaceAction):
         tool_tip = 'Extract the PDFs from the AZW4 formats and add them to their respective books.'
         create_menu_action_unique(self, m, _('Extract PDFs')+'...', 'mimetypes/pdf.png', _(tool_tip),
                                                  False, triggered=partial(self.multi_dispatcher, book_ids, u'AZW4'))
+        
+        tool_tip = 'Extract the KF8s from the MOBI formats and add them to their respective books.'
+        create_menu_action_unique(self, m, _('Extract KF8s')+'...', 'mimetypes/azw3.png', _(tool_tip),
+                                                 False, triggered=partial(self.multi_dispatcher, book_ids, u'MOBI'))
+                                                 
+        m.addSeparator()
+        tool_tip = 'Convert ePubs to KF8 books.'
+        create_menu_action_unique(self, m, _('ePubs to KF8s')+'...', 'mimetypes/azw3.png', _(tool_tip),
+                                                 False, triggered=partial(self.multi_dispatcher, book_ids, u'EPUB'))
 
         m.addSeparator()
         tool_tip = 'Configure the KindleUnpack plugin\'s settings.'
@@ -81,7 +90,7 @@ class InterfacePlugin(InterfaceAction):
         '''
         m = self.menu
         m.clear()
-        kindle_formats = ['MOBI', 'AZW', 'AZW3', 'AZW4', 'PRC']
+        kindle_formats = ['MOBI', 'AZW', 'AZW3', 'AZW4', 'PRC', 'EPUB']
         book_list = self.gatherKindleFormats([book_id], kindle_formats)
         if not book_list:
             tool_tip = 'No suitable format to unpack.'
@@ -134,11 +143,16 @@ class InterfacePlugin(InterfaceAction):
             sm = QMenu()
             ac.setMenu(sm)
             # Standard unpack to external folder ... disable menu if kindlebook encrypted.
-            tool_tip = 'Unpack the {0}\'s source components'.format(format)
-            unpack_menu = create_menu_action_unique(self, sm, _('Unpack')+' {0}'.format(format), 'images/explode3.png',
+            if not kindle_obj.isEpub:
+                tool_tip = 'Unpack the {0}\'s source components'.format(format)
+                unpack_menu = create_menu_action_unique(self, sm, _('Unpack')+' {0}'.format(format), 'images/explode3.png',
                                                 _(tool_tip), False, triggered=partial(self.unpack_ebook, kindle_obj))
-            if kindle_obj.isEncrypted:
-                unpack_menu.setEnabled(False)
+                if kindle_obj.isEncrypted:
+                    unpack_menu.setEnabled(False)
+            else:
+                tool_tip = 'Convert the ePub to KF8 book and add it to the library.'
+                create_menu_action_unique(self, sm, _('ePub to KF8')+'...', 'mimetypes/azw3.png', _(tool_tip), False,
+                                            triggered=partial(self.extract_element, kindle_obj, book_id, u'EPUB', False))
 
             # Extract PDF file from AZW4
             if kindle_obj.isPrintReplica:
@@ -225,6 +239,16 @@ class InterfacePlugin(InterfaceAction):
             goal_format = 'PDF'
             status_msg_type='Print Replica books'
             action_type='Extracting PDFs from'
+        elif target_format == 'MOBI':
+            attr = 'isComboFile'
+            goal_format = 'AZW3'
+            status_msg_type='Combo-mobi books'
+            action_type='Extracting AZWs from'
+        elif target_format == 'EPUB':
+            attr = 'isEpub'
+            goal_format = 'AZW3'
+            status_msg_type='Epub books'
+            action_type='Creating AZWs from'
         books_info = self.gatherKindleFormats(book_ids, [target_format], goal_format)
         # If we have stuff ... send it on its way to the pretty ProgressDialog.
         if books_info:
@@ -289,6 +313,24 @@ class InterfacePlugin(InterfaceAction):
             format = 'PDF'
             try:
                 bookfile = kindle_obj.getPDFFile(outdir)
+            except Exception, e:
+                if quiet:
+                    return False, str(e)
+                return showErrorDlg(str(e), self.gui, True)
+        elif target == 'MOBI':
+            errmsg = 'An'
+            format = 'AZW3'
+            try:
+                bookfile = kindle_obj.getAZW3File(outdir)
+            except Exception, e:
+                if quiet:
+                    return False, str(e)
+                return showErrorDlg(str(e), self.gui, True)
+        elif target == 'EPUB':
+            errmsg = 'An'
+            format = 'AZW3'
+            try:
+                bookfile = kindle_obj.cvt2AZW3File(outdir)
             except Exception, e:
                 if quiet:
                     return False, str(e)

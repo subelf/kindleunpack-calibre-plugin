@@ -22,6 +22,9 @@ class SectionizerLight:
     """ Stolen from Mobi_Unpack and slightly modified. """
     def __init__(self, filename):
         self.data = open(filename, 'rb').read()
+        if self.data[:2] == b'PK':
+            self.ident = 'PK'
+            return
         if self.data[:3] == b'TPZ':
             self.ident = 'TPZ'
         else:
@@ -80,10 +83,38 @@ def makeFileNames(prefix, infile, outdir, kf8=False):
         return os.path.join(outdir, prefix+os.path.splitext(os.path.basename(infile))[0] + '.azw3')
     return os.path.join(outdir, prefix+os.path.splitext(os.path.basename(infile))[0] + '.mobi')
 
+import sys, subprocess, shutil
+
+IS_WIN32 = 'win32' in str(sys.platform).lower()
+
+def subprocess_call(*args, **kwargs):
+    #also works for Popen. It creates a new *hidden* window, so it will work in frozen apps (.exe).
+    if IS_WIN32:
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags = subprocess.CREATE_NEW_CONSOLE | subprocess.STARTF_USESHOWWINDOW
+        startupinfo.wShowWindow = subprocess.SW_HIDE
+        kwargs['startupinfo'] = startupinfo
+    retcode = subprocess.call(*args, **kwargs)
+    return retcode
+
 class mobiProcessor:
     def __init__(self, infile):
+        self.ePubVersion = cfg.plugin_prefs['Epub_Version']
+        self.useHDImages = cfg.plugin_prefs['Use_HD_Images']
+        self.kindlegenPath = None
+        
         self.infile = infile
         self.sect = SectionizerLight(self.infile)
+        if self.sect.ident == 'PK':
+            self.version = 0
+            self.isEncrypted = False
+            self.isPrintReplica = False
+            self.isComboFile = False
+            self.isKF8 = False
+            self.isEpub = True
+            return
+            
+        self.isEpub = False
         if (self.sect.ident != b'BOOKMOBI' and self.sect.ident != b'TEXtREAd') or self.sect.ident == 'TPZ':
             raise Exception(_('Unrecognized Kindle/MOBI file format!'))
         mhl = MobiHeaderLight(self.sect, 0)
@@ -100,7 +131,6 @@ class mobiProcessor:
 
         self.ePubVersion = cfg.plugin_prefs['Epub_Version']
         self.useHDImages = cfg.plugin_prefs['Use_HD_Images']
-
     def getPDFFile(self, outdir):
         _mu.unpackBook(self.infile, outdir)
         files = os.listdir(outdir)
@@ -118,6 +148,12 @@ class mobiProcessor:
         if not os.path.exists(pdf):
             raise Exception(_('Problem locating unpacked pdf: {0}'.format(pdf)))
         return pdf
+        
+    def getAZW3File(self, outdir):
+        mobi_to_split = mobi_split(unicode_str(self.infile))
+        outKF8 = makeFileNames('', self.infile, outdir, True)
+        file(outKF8, 'wb').write(mobi_to_split.getResult8())
+        return outKF8
 
     def unpackMOBI(self, outdir):
         _mu.unpackBook(self.infile, outdir, epubver=self.ePubVersion, use_hd=self.useHDImages)
@@ -137,3 +173,24 @@ class mobiProcessor:
         outKF8 = makeFileNames('KF8-', self.infile, outdir, True)
         file(outMobi, 'wb').write(mobi_to_split.getResult7())
         file(outKF8, 'wb').write(mobi_to_split.getResult8())
+
+    def getKindlegen(self):
+        if not self.kindlegenPath:
+            self.kindlegenPath = cfg.getKindlegen()
+        return self.kindlegenPath
+    
+    def cvt2AZW3File(self, outdir):
+        inBaseName = os.path.splitext(os.path.basename(self.infile))[0]
+        tmpEpubFile = os.path.join(outdir, inBaseName+'.epub')
+        shutil.copy(self.infile, tmpEpubFile)
+        tmpMobiFile = inBaseName+'.mobi'
+        kindlegen_cmdline=[self.getKindlegen(), tmpEpubFile, '-o', tmpMobiFile]
+        ret = subprocess_call(kindlegen_cmdline)
+        if ret > 1:
+            raise Exception(_('Kindlegen({0}) exit with {1}'.format(','.join(kindlegen_cmdline), ret)))
+        tmpMobiFile = os.path.join(outdir, tmpMobiFile)
+        mobi_to_split = mobi_split(unicode_str(tmpMobiFile))
+        outKF8 = os.path.join(outdir, inBaseName+'.azw3')
+        file(outKF8, 'wb').write(mobi_to_split.getResult8())
+        return outKF8
+        

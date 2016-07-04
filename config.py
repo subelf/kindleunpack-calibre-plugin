@@ -15,20 +15,37 @@ except ImportError:
 
 from calibre.utils.config import JSONConfig
 from calibre.utils.filenames import expanduser
-from calibre.gui2 import choose_dir, error_dialog
+from calibre.gui2 import choose_dir, error_dialog, choose_files
 
 from calibre_plugins.kindleunpack_plugin.__init__ import PLUGIN_NAME, PLUGIN_VERSION
 
 PLUGIN_ICONS = ['images/explode3.png', 'images/acrobat.png']
 
 # This is where all preferences for this plugin will be stored.
-plugin_prefs = JSONConfig('plugins/KindleUnpack_prefs')
+plugin_prefs = JSONConfig('plugins/KindleUnpackEx_prefs')
 
 # Set default preferences
 plugin_prefs.defaults['Unpack_Folder'] = expanduser('~')
+plugin_prefs.defaults['Kindlegen_Path'] = 'kindlegen'
 plugin_prefs.defaults['Always_Use_Unpack_Folder'] = False
 plugin_prefs.defaults['Use_HD_Images'] = False
 plugin_prefs.defaults['Epub_Version'] = '2'
+
+def choose_kindlegen(window):
+    paths = choose_files(window, _(PLUGIN_NAME + 'file_chooser'),
+                 _('Select Path To Kindlegen'), select_only_single_file=True)
+    if paths:
+        return paths[0]
+
+def getKindlegen():
+    if not os.path.exists(plugin_prefs['Kindlegen_Path']):
+        kgpath = choose_kindlegen(None)
+        if kgpath:
+            plugin_prefs['Kindlegen_Path'] = unicode(kgpath)
+    
+    if not os.path.exists(plugin_prefs['Kindlegen_Path']):
+        raise Exception(_('Kindlegen not fount at {0}'.format(self.kindlegenPath)))
+    return plugin_prefs['Kindlegen_Path']
 
 class ConfigWidget(QWidget):
 
@@ -86,6 +103,21 @@ class ConfigWidget(QWidget):
             self.epub_version_combobox.setCurrentIndex(0)
         else:
             self.epub_version_combobox.setCurrentIndex(int(plugin_prefs['Epub_Version'])-1)
+            
+        ext_group_box = QGroupBox(_('Extension settings:'), self)
+        layout.addWidget(ext_group_box)
+        ext_group_box_layout = QVBoxLayout()
+        ext_group_box.setLayout(ext_group_box_layout)
+        
+        self.kindlegenPath_txtBox = QLineEdit(plugin_prefs['Kindlegen_Path'], self)
+        self.kindlegenPath_txtBox.setToolTip(_('<p>Path to Kindlegen executable.'))
+        ext_group_box_layout.addWidget(self.kindlegenPath_txtBox)
+        self.kindlegenPath_txtBox.setReadOnly(True)
+        
+        kindlegenPath_button = QPushButton(_('Select/Change Kindlegen'), self)
+        kindlegenPath_button.setToolTip(_('<p>Select/Change path to Kindlegen executable.'))
+        kindlegenPath_button.clicked.connect(self.getKindlegen)
+        ext_group_box_layout.addWidget(kindlegenPath_button)
 
     def save_settings(self):
         # Save current dialog sttings back to JSON config file
@@ -96,6 +128,7 @@ class ConfigWidget(QWidget):
                 plugin_prefs['Epub_Version'] = 'A'
             else:
                 plugin_prefs['Epub_Version'] = unicode(self.epub_version_combobox.currentText())[4:]
+            plugin_prefs['Kindlegen_Path'] = unicode(self.kindlegenPath_txtBox.displayText())
 
     def getDirectory(self):
         c = choose_dir(self, _(PLUGIN_NAME + 'dir_chooser'),
@@ -104,16 +137,33 @@ class ConfigWidget(QWidget):
             self.directory_txtBox.setReadOnly(False)
             self.directory_txtBox.setText(c)
             self.directory_txtBox.setReadOnly(True)
+            
+    def getKindlegen(self):
+        kgpath = choose_kindlegen(self)
+        if kgpath:
+            self.kindlegenPath_txtBox.setReadOnly(False)
+            self.kindlegenPath_txtBox.setText(kgpath)
+            self.kindlegenPath_txtBox.setReadOnly(True)
 
     def validate(self):
         # This is just to catch the situation where somone might
         # manually enter a non-existent path in the Default path textbox.
         # Shouldn't be possible at this point.
-        if not os.path.exists(self.directory_txtBox.text()):
+        if not os.path.isdir(self.directory_txtBox.text()):
             errmsg = '<p>The path specified for the Default Unpack folder does not exist.</p>' \
                         '<p>Your latest preference changes will <b>NOT</b> be saved!</p>' + \
                         '<p>You should configure again and make sure your settings are correct.'
             error_dialog(None, _(PLUGIN_NAME + ' v' + PLUGIN_VERSION),
                                     _(errmsg), show=True)
             return False
+            
+        if not os.path.isfile(self.kindlegenPath_txtBox.text()):
+            errmsg = '<p>The path specified for the Kindlegen executable does not exist.</p>' \
+                        '<p>Your latest preference changes will <b>NOT</b> be saved!</p>' + \
+                        '<p>You should configure again and make sure your settings are correct.'
+            error_dialog(None, _(PLUGIN_NAME + ' v' + PLUGIN_VERSION),
+                                    _(errmsg), show=True)
+            return False
         return True
+
+    

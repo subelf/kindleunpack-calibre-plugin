@@ -47,7 +47,7 @@ def findVersion():
 
 # Find version info from __init__.py and build zip file name from it
 VERS_INFO =  findVersion()
-PLUGIN_NAME = os.path.join(SCRIPT_DIR, 'kindle_unpack_v{}_plugin.zip'.format(VERS_INFO))
+PLUGIN_NAME = os.path.join(SCRIPT_DIR, 'kindle_unpack_ex_v{}_plugin.zip'.format(VERS_INFO))
 
 
 def calibreWrapper(*cmd):
@@ -86,7 +86,7 @@ def zipUpDir(myzip, tdir, localname):
 
 def removePreviousZip():
     print('Removing any leftover zip files ...')
-    for each in glob.glob('kindle_unpack_v*_plugin.zip'):
+    for each in glob.glob('kindle_unpack_ex_v*_plugin.zip'):
         path = os.path.join(SCRIPT_DIR, each)
         if os.path.exists(path):
             os.remove(path)
