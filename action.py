@@ -165,6 +165,9 @@ class InterfacePlugin(InterfaceAction):
                 tool_tip = 'Split the combo KF8/MOBI file into its two components.'
                 create_menu_action_unique(self, sm, _('Split KF8/MOBI')+'...', 'edit-cut.png', _(tool_tip),
                                             False, triggered=partial(self.combo_split, kindle_obj))
+                tool_tip = 'Extract a KF8 file from the combo file and add it to the library.'
+                create_menu_action_unique(self, sm, _('Extract KF8')+'...', 'mimetypes/azw3.png', _(tool_tip),
+                                            False, triggered=partial(self.extract_element, kindle_obj, book_id, u'MOBI', False))
 
             # Extract ePub from the unpacked contents and add to current book's formats.
             convert_menu = None
