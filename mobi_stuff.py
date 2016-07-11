@@ -14,7 +14,6 @@ import calibre_plugins.kindleunpack_plugin.kindleunpackcore.kindleunpack as _mu
 from calibre_plugins.kindleunpack_plugin.kindleunpackcore.compatibility_utils import PY2, bstr, unicode_str
 from calibre_plugins.kindleunpack_plugin.kindleunpackcore.mobi_split import mobi_split
 
-
 if PY2:
     range = xrange
 
@@ -96,6 +95,20 @@ def subprocess_call(*args, **kwargs):
         kwargs['startupinfo'] = startupinfo
     retcode = subprocess.call(*args, **kwargs)
     return retcode
+    
+from functools import partial
+from calibre_plugins.kindleunpack_plugin.kindleunpackcore.mobi_split import readsection, writesection, add_exth, read_exth, write_exth, writeint
+
+def amend_kf8(kf8_data):
+    infKF8 = readsection(kf8_data, 0)    
+    infKF8Updater = None
+    #update exth set [501](cdeType)='EBOK'
+    if read_exth(infKF8, 501):
+        infKF8Updater = partial(write_exth)
+    else:
+        infKF8Updater = partial(add_exth)
+    infKF8 = infKF8Updater(infKF8, 501, b'EBOK')
+    return writesection(kf8_data, 0, infKF8)
 
 class mobiProcessor:
     def __init__(self, infile):
@@ -131,6 +144,7 @@ class mobiProcessor:
 
         self.ePubVersion = cfg.plugin_prefs['Epub_Version']
         self.useHDImages = cfg.plugin_prefs['Use_HD_Images']
+        
     def getPDFFile(self, outdir):
         _mu.unpackBook(self.infile, outdir)
         files = os.listdir(outdir)
@@ -152,7 +166,7 @@ class mobiProcessor:
     def getAZW3File(self, outdir):
         mobi_to_split = mobi_split(unicode_str(self.infile))
         outKF8 = makeFileNames('', self.infile, outdir, True)
-        file(outKF8, 'wb').write(mobi_to_split.getResult8())
+        file(outKF8, 'wb').write(amend_kf8(mobi_to_split.getResult8()))
         return outKF8
 
     def unpackMOBI(self, outdir):
@@ -172,12 +186,19 @@ class mobiProcessor:
         outMobi = makeFileNames('MOBI-', self.infile, outdir)
         outKF8 = makeFileNames('KF8-', self.infile, outdir, True)
         file(outMobi, 'wb').write(mobi_to_split.getResult7())
-        file(outKF8, 'wb').write(mobi_to_split.getResult8())
+        file(outKF8, 'wb').write(amend_kf8(mobi_to_split.getResult8()))
 
     def getKindlegen(self):
         if not self.kindlegenPath:
             self.kindlegenPath = cfg.getKindlegen()
         return self.kindlegenPath
+        
+    def amendAzw3(self):
+        kf8file = file(self.infile, 'rb')
+        kf8data = amend_kf8(kf8file.read())
+        kf8file.close()
+        file(self.infile, 'wb').write(kf8data)
+        return self.infile
     
     def cvt2AZW3File(self, outdir):
         inBaseName = os.path.splitext(os.path.basename(self.infile))[0]
@@ -191,6 +212,6 @@ class mobiProcessor:
         tmpMobiFile = os.path.join(outdir, tmpMobiFile)
         mobi_to_split = mobi_split(unicode_str(tmpMobiFile))
         outKF8 = os.path.join(outdir, inBaseName+'.azw3')
-        file(outKF8, 'wb').write(mobi_to_split.getResult8())
+        file(outKF8, 'wb').write(amend_kf8(mobi_to_split.getResult8()))
         return outKF8
         

@@ -76,6 +76,11 @@ class InterfacePlugin(InterfaceAction):
         tool_tip = 'Convert ePubs to KF8 books.'
         create_menu_action_unique(self, m, _('ePubs to KF8s')+'...', 'mimetypes/azw3.png', _(tool_tip),
                                                  False, triggered=partial(self.multi_dispatcher, book_ids, u'EPUB'))
+                                                 
+        m.addSeparator()
+        tool_tip = 'Amend KF8 files to be shown as EBOOKs in a kindle device.'
+        create_menu_action_unique(self, m, _('Set EBOK tags')+'...', 'mimetypes/azw3.png', _(tool_tip),
+                                                 False, triggered=partial(self.multi_amend_bookfile, book_ids))
 
         m.addSeparator()
         tool_tip = 'Configure the KindleUnpack plugin\'s settings.'
@@ -175,8 +180,12 @@ class InterfacePlugin(InterfaceAction):
                 tool_tip = 'Convert standalone KF8 file to its original ePub.'
                 convert_menu = create_menu_action_unique(self, sm, _('KF8 to ePub')+'...', 'mimetypes/epub.png', _(tool_tip),
                                             False, triggered=partial(self.extract_element, kindle_obj, book_id, u'AZW3', False))
+                tool_tip = 'Amend a KF8 file to be shown as EBOOK in a kindle device.'
+                convert_menu2 = create_menu_action_unique(self, sm, _('Set EBOK tag')+'...', 'mimetypes/azw3.png', _(tool_tip),
+                                            False, triggered=partial(self.amend_bookfile, kindle_obj, book_id, u'AZW3', False))
             if kindle_obj.isEncrypted and convert_menu is not None:
                 convert_menu.setEnabled(False)
+                convert_menu2.setEnabled(False)
 
         # Add menu item to go to plugin configuration.
         m.addSeparator()
@@ -227,6 +236,35 @@ class InterfacePlugin(InterfaceAction):
                 books_info.append((book_id, title, details))
         return books_info
 
+    def multi_amend_bookfile(self, book_ids):
+        db = self.gui.library_view.model().db
+        target_format='AZW3'
+        attr = 'isKF8'
+        goal_format = 'EBOK'
+        status_msg_type='KF8 books'
+        action_type='Amending AZW3 Files'
+        books_info = self.gatherKindleFormats(book_ids, [target_format])
+        if books_info:
+            d = ProgressDialog(self.gui, books_info, self.amend_bookfile, db, target_format, attr,
+                                   status_msg_type=status_msg_type, action_type=action_type)
+            if d.wasCanceled():
+                return
+            successes, failures = d.get_results()
+            if successes:
+                ids_to_highlight = []
+                for i in successes:
+                    ids_to_highlight.append(i[0])
+                self.highlight_entries(ids_to_highlight)
+            title = PLUGIN_NAME + ' v' + PLUGIN_VERSION
+            plural = '' if len(successes) == 1 else 's'
+            msg = '<p>{0} {2} file{3} amended. {1} failed'.format(len(successes), len(failures), goal_format, plural)
+            log = build_log(failures, successes, target_format, goal_format, status_msg_type[:-1])
+            sd = ResultsSummaryDialog(self.gui, title, msg, log)
+            sd.exec_()
+        else:
+            return info_dialog(None, _(PLUGIN_NAME + ' v' + PLUGIN_VERSION),
+                '<p>Nothing to do. Perhaps no books selected had {0} formats.'.format(target_format), show=True)
+        
     def multi_dispatcher(self, book_ids, target_format):
         '''
         Prepares the necessaries to feed to ProgressDialog in dialogs.py
@@ -295,6 +333,16 @@ class InterfacePlugin(InterfaceAction):
             except Exception, e:
                 return showErrorDlg(str(e), self.gui, True)
             open_local_file(outdir)
+
+    def amend_bookfile(self, kindle_obj, book_id, target, quiet=False):
+        if target == 'AZW3':
+            try:
+                bookfile = kindle_obj.amendAzw3()
+            except Exception, e:
+                if quiet:
+                    return False, str(e)
+                return showErrorDlg(str(e), self.gui, True)
+        return True, None
 
     def extract_element(self, kindle_obj, book_id, target, quiet=False):
         '''
