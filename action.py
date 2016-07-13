@@ -10,9 +10,11 @@ import os
 from functools import partial
 
 try:
+    from PyQt5.QtWidgets import QLineEdit,QInputDialog
     from PyQt5.Qt import QMenu, QToolButton
 except ImportError:
     from PyQt4.Qt import QMenu, QToolButton
+    from PyQt4.QtWidgets import QLineEdit,QInputDialog
 
 from calibre.gui2 import choose_dir, info_dialog, open_local_file
 from calibre.gui2.actions import InterfaceAction
@@ -80,8 +82,11 @@ class InterfacePlugin(InterfaceAction):
         m.addSeparator()
         tool_tip = 'Amend KF8 files to be shown as EBOOKs in a kindle device.'
         create_menu_action_unique(self, m, _('Set EBOK tags')+'...', 'mimetypes/azw3.png', _(tool_tip),
-                                                 False, triggered=partial(self.multi_amend_bookfile, book_ids))
-
+                                                 False, triggered=partial(self.multi_amend_bookfile, 'EBOK', book_ids))
+        tool_tip = 'Set ASIN for KF8 files.'
+        create_menu_action_unique(self, m, _('Set ASIN ids')+'...', 'devices/kindle.jpg', _(tool_tip),
+                                                 False, triggered=partial(self.multi_amend_bookfile, 'ASIN', book_ids))
+        
         m.addSeparator()
         tool_tip = 'Configure the KindleUnpack plugin\'s settings.'
         create_menu_action_unique(self, m, _('Customize plugin')+'...', 'config.png', _(tool_tip),
@@ -182,10 +187,12 @@ class InterfacePlugin(InterfaceAction):
                                             False, triggered=partial(self.extract_element, kindle_obj, book_id, u'AZW3', False))
                 tool_tip = 'Amend a KF8 file to be shown as EBOOK in a kindle device.'
                 convert_menu2 = create_menu_action_unique(self, sm, _('Set EBOK tag')+'...', 'mimetypes/azw3.png', _(tool_tip),
-                                            False, triggered=partial(self.amend_bookfile, kindle_obj, book_id, u'AZW3', False))
+                                            False, triggered=partial(self.amend_bookfile, "EBOK", kindle_obj, book_id, u'AZW3', False))
+                tool_tip = 'Set ASIN values for a KF8 file.'
+                convert_menu2 = create_menu_action_unique(self, sm, _('Set ASIN')+'...', 'devices/kindle.jpg', _(tool_tip),
+                                            False, triggered=partial(self.amend_bookfile, "ASIN", kindle_obj, book_id, u'AZW3', False))
             if kindle_obj.isEncrypted and convert_menu is not None:
                 convert_menu.setEnabled(False)
-                convert_menu2.setEnabled(False)
 
         # Add menu item to go to plugin configuration.
         m.addSeparator()
@@ -235,8 +242,30 @@ class InterfacePlugin(InterfaceAction):
             if details:
                 books_info.append((book_id, title, details))
         return books_info
+    
+    def selectBookIdentifier(self, id_dict, key):
+        if not id_dict:
+            return ''
+        if key in id_dict:
+            return id_dict[key]
+        return ''
+        
+    def gatherBookAsins(self, book_ids):
+        db = self.gui.library_view.model().db
+        book_asins = {}
+        for book_id in book_ids:
+            mi = db.get_metadata(book_id, index_is_id=True, get_user_categories=False)
+            book_asin = self.selectBookIdentifier(mi.identifiers, 'asin')
+            if not book_asin:
+                book_asin = self.selectBookIdentifier(mi.identifiers, 'mobi-asin')
+            if not book_asin:
+                book_asin = self.selectBookIdentifier(mi.identifiers, 'amazon')
+            if not book_asin:
+                book_asin = self.selectBookIdentifier(mi.identifiers, 'amazon_jp')
+            book_asins[book_id] = book_asin
+        return book_asins
 
-    def multi_amend_bookfile(self, book_ids):
+    def multi_amend_bookfile(self, command, book_ids):
         db = self.gui.library_view.model().db
         target_format='AZW3'
         attr = 'isKF8'
@@ -245,7 +274,7 @@ class InterfacePlugin(InterfaceAction):
         action_type='Amending AZW3 Files'
         books_info = self.gatherKindleFormats(book_ids, [target_format])
         if books_info:
-            d = ProgressDialog(self.gui, books_info, self.amend_bookfile, db, target_format, attr,
+            d = ProgressDialog(self.gui, books_info, partial(self.amend_bookfile, command), db, target_format, attr,
                                    status_msg_type=status_msg_type, action_type=action_type)
             if d.wasCanceled():
                 return
@@ -334,14 +363,29 @@ class InterfacePlugin(InterfaceAction):
                 return showErrorDlg(str(e), self.gui, True)
             open_local_file(outdir)
 
-    def amend_bookfile(self, kindle_obj, book_id, target, quiet=False):
-        if target == 'AZW3':
-            try:
-                bookfile = kindle_obj.amendAzw3()
-            except Exception, e:
-                if quiet:
-                    return False, str(e)
-                return showErrorDlg(str(e), self.gui, True)
+    def amend_bookfile(self, command, kindle_obj, book_id, target, quiet=False):
+        try:
+            if command == 'EBOK':
+                kindle_obj.amendAzw3()
+                
+            if command == 'ASIN':
+                asin_text = str(kindle_obj.getAsin())
+                if not asin_text:
+                    asin_texts = self.gatherBookAsins([book_id])
+                    if asin_texts:
+                        asin_text = asin_texts[book_id]
+                if not quiet:
+                    asin_text, isOk = QInputDialog.getText(self.gui, _(PLUGIN_NAME + ' v' + PLUGIN_VERSION),
+                            'ASIN:', QLineEdit.Normal, asin_text)
+                    if not isOk:
+                        return False, 'Canceled'
+                if not asin_text:
+                    return False, 'No ASIN'
+                kindle_obj.setAsin(str(asin_text))
+        except Exception, e:
+            if quiet:
+                return False, str(e)
+            return showErrorDlg(str(e), self.gui, True)                 
         return True, None
 
     def extract_element(self, kindle_obj, book_id, target, quiet=False):

@@ -99,17 +99,25 @@ def subprocess_call(*args, **kwargs):
 from functools import partial
 from calibre_plugins.kindleunpack_plugin.kindleunpackcore.mobi_split import readsection, writesection, add_exth, read_exth, write_exth, writeint
 
-def amend_kf8(kf8_data):
-    infKF8 = readsection(kf8_data, 0)    
-    infKF8Updater = None
-    #update exth set [501](cdeType)='EBOK'
-    if read_exth(infKF8, 501):
+def add_update_exth(mobi_header, exth_key, exth_value):
+    if read_exth(mobi_header, exth_key):
         infKF8Updater = partial(write_exth)
     else:
         infKF8Updater = partial(add_exth)
-    infKF8 = infKF8Updater(infKF8, 501, b'EBOK')
+    return infKF8Updater(mobi_header, exth_key, exth_value)
+
+def amend_kf8(kf8_data):
+    infKF8 = readsection(kf8_data, 0)
+    #update exth set [501](cdeType)='EBOK'
+    infKF8 = add_update_exth(infKF8, 501, b'EBOK')
     return writesection(kf8_data, 0, infKF8)
 
+def write_asin_kf8(kf8_data, asin_text):
+    infKF8 = readsection(kf8_data, 0)
+    infKF8 = add_update_exth(infKF8, 113, asin_text)
+    infKF8 = add_update_exth(infKF8, 504, asin_text)
+    return writesection(kf8_data, 0, infKF8)
+    
 class mobiProcessor:
     def __init__(self, infile):
         self.ePubVersion = cfg.plugin_prefs['Epub_Version']
@@ -214,4 +222,20 @@ class mobiProcessor:
         outKF8 = os.path.join(outdir, inBaseName+'.azw3')
         file(outKF8, 'wb').write(amend_kf8(mobi_to_split.getResult8()))
         return outKF8
-        
+    
+    def getAsin(self):
+        kf8file = file(self.infile, 'rb')
+        infKF8 = readsection(kf8file.read(), 0)
+        asin_texts = read_exth(infKF8, 113)
+        if not asin_texts:
+            asin_texts = read_exth(infKF8, 504)
+        if asin_texts:
+            return asin_texts[0]
+        return b''
+
+    def setAsin(self, asin_text):
+        kf8file = file(self.infile, 'rb')
+        kf8data = write_asin_kf8(kf8file.read(), asin_text)
+        kf8file.close()
+        file(self.infile, 'wb').write(kf8data)
+        return self.infile
